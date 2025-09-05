@@ -2,6 +2,6 @@ streamlit
 opencv-python-headless
 numpy
 Pillow
-moviepy
+moviepy==1.0.3
 imageio-ffmpeg
 imageio
