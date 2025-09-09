@@ -11,12 +11,13 @@ class SimpleVRProcessor:
     def convert_to_vr180(self, input_path, progress_callback=None):
         """
         🔥 MAIN CONVERSION FUNCTION
-        Converts 2D video to VR 180 stereoscopic format
+        Converts 2D video to VR 180 stereoscopic format WITH AUDIO
         """
         
         # Create output path
         output_dir = tempfile.mkdtemp()
         output_path = os.path.join(output_dir, 'vr180_output.mp4')
+        temp_video_path = os.path.join(output_dir, 'temp_video.mp4')
         
         try:
             # Step 1: Load video
@@ -33,9 +34,9 @@ class SimpleVRProcessor:
             vr_width = width * 2  # Double width for left+right eye
             vr_height = height
             
-            # Video writer for output
+            # Video writer for output - NO AUDIO YET
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (vr_width, vr_height))
+            out = cv2.VideoWriter(temp_video_path, fourcc, fps, (vr_width, vr_height))
             
             frame_count = 0
             
@@ -68,11 +69,39 @@ class SimpleVRProcessor:
             cap.release()
             out.release()
             
-            # Step 5: Final optimization
+            # Step 5: ADD AUDIO FROM ORIGINAL VIDEO
             if progress_callback:
-                progress_callback(95, "Optimizing for VR...", 3)
+                progress_callback(95, "Adding audio...", 3)
             
-            self.optimize_vr_video(output_path)
+            # Use MoviePy to combine the processed video with original audio
+            original_clip = VideoFileClip(input_path)
+            processed_clip = VideoFileClip(temp_video_path)
+            
+            # Set the audio from original to processed video
+            if original_clip.audio is not None:
+                final_clip = processed_clip.set_audio(original_clip.audio)
+                
+                # Write final video with audio
+                final_clip.write_videofile(
+                    output_path,
+                    codec='libx264',
+                    audio_codec='aac',
+                    temp_audiofile='temp-audio.m4a',
+                    remove_temp=True,
+                    verbose=False,
+                    logger=None
+                )
+                
+                final_clip.close()
+            else:
+                # No audio in original, just move the temp file
+                os.rename(temp_video_path, output_path)
+            
+            # Cleanup
+            original_clip.close()
+            processed_clip.close()
+            if os.path.exists(temp_video_path):
+                os.remove(temp_video_path)
             
             if progress_callback:
                 progress_callback(100, "Conversion complete!", 4)
@@ -80,13 +109,13 @@ class SimpleVRProcessor:
             return output_path
             
         except Exception as e:
+            # Cleanup on error
+            if os.path.exists(temp_video_path):
+                os.remove(temp_video_path)
             raise Exception(f"Conversion failed: {str(e)}")
     
     def simple_depth_estimation(self, frame):
-        """
-        🧠 DEPTH ESTIMATION ENGINE
-        Estimates depth using gradients + brightness (FREE method)
-        """
+        """🧠 DEPTH ESTIMATION ENGINE"""
         
         # Convert to grayscale
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -114,10 +143,7 @@ class SimpleVRProcessor:
         return depth.astype(np.uint8)
     
     def create_stereo_pair(self, frame, depth_map):
-        """
-        👁️ STEREOSCOPIC PAIR GENERATOR
-        Creates left and right eye views with proper parallax
-        """
+        """👁️ STEREOSCOPIC PAIR GENERATOR"""
         
         height, width = frame.shape[:2]
         
@@ -135,10 +161,7 @@ class SimpleVRProcessor:
         return left_eye, right_eye
     
     def shift_image(self, image, disparity, direction):
-        """
-        🔄 IMAGE DISPLACEMENT ENGINE
-        Shifts image pixels based on depth to create parallax effect
-        """
+        """🔄 IMAGE DISPLACEMENT ENGINE"""
         
         height, width = image.shape[:2]
         
@@ -158,32 +181,3 @@ class SimpleVRProcessor:
         )
         
         return shifted
-    
-    def optimize_vr_video(self, video_path):
-        """
-        🎬 VR OPTIMIZATION ENGINE
-        Optimizes video for better VR playback
-        """
-        try:
-            # Load with moviepy for better compression
-            clip = VideoFileClip(video_path)
-            temp_path = video_path.replace('.mp4', '_optimized.mp4')
-            
-            # Write with VR-optimized settings
-            clip.write_videofile(
-                temp_path,
-                codec='libx264',           # Good VR compatibility
-                audio_codec='aac',         # Standard audio
-                temp_audiofile='temp-audio.m4a',
-                remove_temp=True,
-                verbose=False,             # Silent processing
-                logger=None
-            )
-            
-            clip.close()
-            
-            # Replace original with optimized version
-            os.replace(temp_path, video_path)
-            
-        except Exception as e:
-            print(f"Optimization warning: {e}")  # Non-fatal error
